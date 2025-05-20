@@ -1,6 +1,7 @@
 import User from "../models/User.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
+import { upsertStreamUser } from "../lib/stream.js";
 export async function signup (req,res){
    const { email , password , name } = req.body;
 
@@ -26,6 +27,21 @@ if (existingUser) {
 const idx = Math.floor(Math.random() * 100) + 1; // generate a num between 1-100
 const randomAvatar = `https://avatar.iran.liara.run/public/${idx}.png`;
 const user = await  User.create({email , name , password , profilePic : randomAvatar });
+
+try {
+    await upsertStreamUser({
+        id: user._id.toString(),
+        name: user.name,
+        image : user.profilePic ||""
+    
+    })
+    console.log("stream user created");
+    
+} catch (error) {
+    console.log("error in creating stream  user  ");
+    console.log( error );
+    
+}
 const token = jwt.sign({userId : user._id},process.env.jwt_secret,{ expiresIn : "7d"})
 
 res.cookie("jwt" , token, {
@@ -78,4 +94,40 @@ export function logout (req,res){
    res.clearCookie("jwt")
    res.status(200).json({success :true  , message:" log out  successfully "})
 
+}
+
+export async function onboard(req,res){
+    try {
+        const userid = req.user._id;
+        const {name , bio , nativeLanguage , learningLanguage , location} = req.body ;
+        if(!name || !bio  || !nativeLanguage || !learningLanguage ||!location){
+          return res.status(400).json({message :"All fileds are required for onboarding "})  
+        }
+
+        const updatedUser= await User.findByIdAndUpdate(userid,{
+            ...req.body , 
+        isOnboarded :true        }, {new :true})
+
+        if(!updatedUser) {return res.status(404).json({message : "user not found "})}
+try {
+    await upsertStreamUser({
+        id : updatedUser._id.toString() , 
+        name : updatedUser.name , 
+        image : updatedUser.profilePic || ""
+    })
+    console.log("streaam user updated");
+    
+} catch (error) {
+    console.log("error in updating stream user");
+    
+    console.log(error);
+    
+}
+        return res.status(200).json({success:true , user : updatedUser})
+        
+    } catch (error) {
+        console.log( error);
+        return res.status(500).json({message : "error in onboarding "})
+        
+    }
 }
